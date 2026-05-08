@@ -1,64 +1,92 @@
 #!/usr/bin/env bash
-# 一键脚本：SSH 到目标机器，安装 nyanpass nodeclient (miya) 并做内核网络调优
+# 一键脚本：在【本机 Linux】装 nyanpass nodeclient (miya) + 内核网络调优
+# 安装时的网络流量经 ssh -D SOCKS5 隧道走 <PROXY_IP>（202.x 仅作为网络代理）
 #
-# 用法（本地）:
-#   ./miya.sh <IP> <PASSWORD>
+# 必须 root 运行。
 #
-# 用法（远程）:
-#   bash <(curl -fsSL https://raw.githubusercontent.com/inifcloud/inifcloudsh/main/miya.sh) <IP> <PASSWORD>
+# 用法:
+#   sudo -E bash <(curl -fsSL <URL>) <PROXY_IP> <PROXY_PASSWORD>
+# 例:
+#   sudo -E bash <(curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/inifcloud/inifcloudsh/main/miya.sh) 202.155.155.254 'wasd123yuwan/'
+#
+# 可选 env: PROXY_USER (默认 root), PROXY_PORT (默认 22), SOCKS_PORT (默认 11080)
 
 set -euo pipefail
 
 if [[ $# -lt 2 ]]; then
-  echo "用法: $0 <IP> <PASSWORD>" >&2
+  echo "用法: $0 <PROXY_IP> <PROXY_PASSWORD>" >&2
+  exit 1
+fi
+if [[ $EUID -ne 0 ]]; then
+  echo "必须以 root 运行（sysctl + nyanpass 安装都需要 root）" >&2
   exit 1
 fi
 
-HOST="$1"
-PASS="$2"
-USER="${SSH_USER:-root}"
-PORT="${SSH_PORT:-22}"
+PROXY_HOST="$1"
+PROXY_PASS="$2"
+PROXY_USER="${PROXY_USER:-root}"
+PROXY_PORT="${PROXY_PORT:-22}"
+SOCKS_PORT="${SOCKS_PORT:-11080}"
 
 NYP_TOKEN="3d3ff588-3466-44c2-a4f4-161a3e297fef"
 NODE_NAME="miya"
 
-ensure_sshpass() {
-  if command -v sshpass >/dev/null 2>&1; then return; fi
-  echo "[*] 本机未检测到 sshpass，尝试自动安装..."
-  case "$(uname -s)" in
-    Darwin)
-      command -v brew >/dev/null 2>&1 || { echo "请先安装 Homebrew: https://brew.sh" >&2; exit 1; }
-      brew install hudochenkov/sshpass/sshpass
-      ;;
-    Linux)
-      if   command -v apt-get >/dev/null 2>&1; then sudo apt-get update -y && sudo apt-get install -y sshpass
-      elif command -v yum     >/dev/null 2>&1; then sudo yum     install -y sshpass
-      elif command -v dnf     >/dev/null 2>&1; then sudo dnf     install -y sshpass
-      elif command -v apk     >/dev/null 2>&1; then sudo apk add --no-cache sshpass
-      elif command -v pacman  >/dev/null 2>&1; then sudo pacman -S --noconfirm sshpass
-      else echo "未识别的 Linux 发行版，请手动安装 sshpass" >&2; exit 1
-      fi
-      ;;
-    *) echo "未支持的平台，请手动安装 sshpass" >&2; exit 1 ;;
-  esac
+# ---------- 1) 装依赖 ----------
+ensure_pkgs() {
+  local missing=0
+  for c in sshpass curl ssh; do command -v "$c" >/dev/null 2>&1 || missing=1; done
+  [[ $missing -eq 0 ]] && return
+  echo "[*] 安装依赖 sshpass / curl / openssh ..."
+  if   command -v apt-get >/dev/null 2>&1; then apt-get update -y && apt-get install -y sshpass curl openssh-client
+  elif command -v dnf     >/dev/null 2>&1; then dnf install -y sshpass curl openssh-clients
+  elif command -v yum     >/dev/null 2>&1; then yum install -y sshpass curl openssh-clients
+  elif command -v apk     >/dev/null 2>&1; then apk add --no-cache sshpass curl openssh-client
+  elif command -v pacman  >/dev/null 2>&1; then pacman -Sy --noconfirm sshpass curl openssh
+  else echo "请手动安装 sshpass / curl / openssh-client" >&2; exit 1
+  fi
 }
-ensure_sshpass
+ensure_pkgs
 
-echo "[*] 连接 ${USER}@${HOST}:${PORT} ..."
-
-sshpass -p "$PASS" ssh \
+# ---------- 2) 起 SSH SOCKS5 隧道 ----------
+echo "[*] 启动 SSH SOCKS5 隧道 ${PROXY_USER}@${PROXY_HOST}:${PROXY_PORT} -> 127.0.0.1:${SOCKS_PORT}"
+SSHPASS="$PROXY_PASS" sshpass -e ssh -fNT \
+  -D "127.0.0.1:${SOCKS_PORT}" \
   -o StrictHostKeyChecking=no \
   -o UserKnownHostsFile=/dev/null \
   -o ConnectTimeout=15 \
-  -p "$PORT" "${USER}@${HOST}" \
-  "NODE_NAME='${NODE_NAME}' NYP_TOKEN='${NYP_TOKEN}' bash -s" <<'REMOTE'
-set -e
+  -o ServerAliveInterval=30 \
+  -o ExitOnForwardFailure=yes \
+  -p "$PROXY_PORT" "${PROXY_USER}@${PROXY_HOST}"
 
-echo "[远端] 1/2 安装 nyanpass nodeclient (${NODE_NAME}) ..."
+cleanup() {
+  echo "[*] 关闭 SSH SOCKS5 隧道"
+  pkill -f "ssh.*-D 127.0.0.1:${SOCKS_PORT}.*${PROXY_HOST}" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+# 等隧道就绪
+echo "[*] 等待 SOCKS5 就绪..."
+for i in $(seq 1 15); do
+  if curl --socks5-hostname "127.0.0.1:${SOCKS_PORT}" -fsS --max-time 5 -o /dev/null \
+       https://dispatch.nyafw.com/download/nyanpass-install.sh 2>/dev/null; then
+    echo "[*] SOCKS5 就绪 ✓"
+    break
+  fi
+  sleep 1
+  [[ $i -eq 15 ]] && { echo "SOCKS5 隧道未就绪，退出" >&2; exit 1; }
+done
+
+# ---------- 3) 经 SOCKS5 装 nyanpass ----------
+export ALL_PROXY="socks5h://127.0.0.1:${SOCKS_PORT}"
+export HTTPS_PROXY="$ALL_PROXY" HTTP_PROXY="$ALL_PROXY"
+export https_proxy="$ALL_PROXY" http_proxy="$ALL_PROXY" all_proxy="$ALL_PROXY"
+
+echo "[*] 1/2 安装 nyanpass nodeclient (${NODE_NAME}) ..."
 printf '%s\nn\nn\n' "${NODE_NAME}" | bash <(curl -fLSs https://dispatch.nyafw.com/download/nyanpass-install.sh) \
   rel_nodeclient "-t ${NYP_TOKEN} -u https://nyp.pccwg.us"
 
-echo "[远端] 2/2 写入 sysctl 调优 ..."
+# ---------- 4) sysctl 调优（本地，不走代理）----------
+echo "[*] 2/2 写入 sysctl ..."
 rm -rf /etc/sysctl.d/*
 cat > /etc/sysctl.d/yuwan.conf <<'SYSCTL'
 net.ipv4.tcp_congestion_control = bbr
@@ -130,8 +158,5 @@ SYSCTL
 
 echo '' > /etc/sysctl.conf
 sysctl --system
-
-echo "[远端] 完成 ✓"
-REMOTE
 
 echo "[*] 全部完成 ✓"
