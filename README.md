@@ -18,17 +18,19 @@ bash <(curl -fsSL <脚本URL>) <IP> '<PASSWORD>'
 | miya  | `3d3ff588-3466-44c2-a4f4-161a3e297fef` | `miya.sh` |
 | yzt   | `18e45f7a-fba8-4d69-a69d-2ad87f3e3843` | `yzt.sh` |
 
-## 加速地址（国内机器用）
+## 加速地址（实测可用，按速度排）
 
 把 `<file>` 替换成 `yuwan.sh` / `miya.sh` / `yzt.sh`。
 
 | 来源 | URL | 备注 |
 | --- | --- | --- |
-| GitHub raw | `https://raw.githubusercontent.com/inifcloud/inifcloudsh/main/<file>` | 国外/能直连 |
-| kkgithub   | `https://raw.kkgithub.com/inifcloud/inifcloudsh/main/<file>` | 香港镜像，无缓存 |
-| ghfast     | `https://ghfast.top/https://raw.githubusercontent.com/inifcloud/inifcloudsh/main/<file>` | 无缓存 |
-| gh-proxy   | `https://gh-proxy.com/https://raw.githubusercontent.com/inifcloud/inifcloudsh/main/<file>` | 无缓存 |
-| jsDelivr   | `https://cdn.jsdelivr.net/gh/inifcloud/inifcloudsh@main/<file>` | 全球 CDN，~10 分钟缓存 |
+| gcore jsDelivr   | `https://gcore.jsdelivr.net/gh/inifcloud/inifcloudsh@main/<file>` | 全球 CDN，有缓存 |
+| fastly jsDelivr  | `https://fastly.jsdelivr.net/gh/inifcloud/inifcloudsh@main/<file>` | 全球 CDN，有缓存 |
+| gh-proxy.com     | `https://gh-proxy.com/https://raw.githubusercontent.com/inifcloud/inifcloudsh/main/<file>` | 无缓存 |
+| ghproxy.net      | `https://ghproxy.net/https://raw.githubusercontent.com/inifcloud/inifcloudsh/main/<file>` | 无缓存 |
+| ghfast.top       | `https://ghfast.top/https://raw.githubusercontent.com/inifcloud/inifcloudsh/main/<file>` | 无缓存 |
+| statically.io    | `https://cdn.statically.io/gh/inifcloud/inifcloudsh/main/<file>` | 全球 CDN，有缓存 |
+| GitHub 直连      | `https://raw.githubusercontent.com/inifcloud/inifcloudsh/main/<file>` | 国外用 |
 
 ## 可选环境变量
 
