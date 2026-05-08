@@ -1,90 +1,25 @@
 #!/usr/bin/env bash
-# 一键脚本：在【本机 Linux】装 nyanpass nodeclient (yzt) + 内核网络调优
-# 安装期间用 sshuttle 把所有 TCP+DNS 透明经 SSH 隧道走 <PROXY_IP>（仅安装期间用，结束后自动断）
+# yuwan.sh - 装 nyanpass nodeclient (yuwan) + 自定义 sysctl
 #
-# 必须 root 运行。
+# 直接走 dl.nyafw.com，绕过 dispatch.nyafw.com 的国家检测
+# （dispatch 用 apple.com geo=cn 头判断，AWS 中国区会被误判为 CN，走慢镜像）。
+# S=yuwan       走官方静默/无交互模式（跳过所有 read）
+# REINSTALL=1   允许覆盖已存在的同名服务（避免半成品装上后 token 重复报错）
 #
-# 用法:
-#   bash <(curl -fsSL <URL>) <PROXY_IP> <PROXY_PASSWORD>
-# 例:
-#   bash <(curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/inifcloud/inifcloudsh/main/yzt.sh) 202.155.155.254 'wasd123yuwan/'
-#
-# 可选 env: PROXY_USER (默认 root), PROXY_PORT (默认 22)
+# 用法（root 运行）:
+#   bash <(curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/inifcloud/inifcloudsh/main/yzt.sh)
 
 set -euo pipefail
-
-if [[ $# -lt 2 ]]; then
-  echo "用法: $0 <PROXY_IP> <PROXY_PASSWORD>" >&2
-  exit 1
-fi
-if [[ $EUID -ne 0 ]]; then
-  echo "必须以 root 运行" >&2
-  exit 1
-fi
-
-PROXY_HOST="$1"
-PROXY_PASS="$2"
-PROXY_USER="${PROXY_USER:-root}"
-PROXY_PORT="${PROXY_PORT:-22}"
+[[ $EUID -ne 0 ]] && { echo "需 root 运行" >&2; exit 1; }
 
 NYP_TOKEN="18e45f7a-fba8-4d69-a69d-2ad87f3e3843"
 NODE_NAME="yzt"
 
-PIDFILE="/tmp/inifcloudsh-sshuttle.$$.pid"
-
-# ---------- 1) 装依赖 ----------
-ensure_pkgs() {
-  local missing=0
-  for c in sshpass curl ssh sshuttle; do command -v "$c" >/dev/null 2>&1 || missing=1; done
-  [[ $missing -eq 0 ]] && return
-  echo "[*] 安装依赖 sshpass / curl / openssh-client / sshuttle ..."
-  if   command -v apt-get >/dev/null 2>&1; then apt-get update -y && apt-get install -y sshpass curl openssh-client sshuttle
-  elif command -v dnf     >/dev/null 2>&1; then dnf install -y sshpass curl openssh-clients sshuttle
-  elif command -v yum     >/dev/null 2>&1; then yum install -y epel-release || true; yum install -y sshpass curl openssh-clients sshuttle
-  elif command -v apk     >/dev/null 2>&1; then apk add --no-cache sshpass curl openssh-client sshuttle
-  elif command -v pacman  >/dev/null 2>&1; then pacman -Sy --noconfirm sshpass curl openssh sshuttle
-  else echo "请手动安装 sshpass / curl / openssh-client / sshuttle" >&2; exit 1
-  fi
-}
-ensure_pkgs
-
-# ---------- 2) 起 sshuttle 透明隧道 ----------
-echo "[*] 启动 sshuttle 透明 SSH 隧道 ${PROXY_USER}@${PROXY_HOST}:${PROXY_PORT} ..."
-export SSHPASS="$PROXY_PASS"
-sshuttle --daemon --pidfile="$PIDFILE" \
-  --ssh-cmd "sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p $PROXY_PORT" \
-  --dns \
-  -r "${PROXY_USER}@${PROXY_HOST}" \
-  0/0
-
-cleanup() {
-  echo "[*] 关闭 sshuttle"
-  if [[ -f "$PIDFILE" ]]; then
-    kill "$(cat "$PIDFILE")" 2>/dev/null || true
-    sleep 1
-    rm -f "$PIDFILE"
-  fi
-}
-trap cleanup EXIT
-
-# 等隧道生效（直接 curl 公网，不带任何代理 env）
-echo "[*] 等待隧道生效..."
-for i in $(seq 1 20); do
-  if curl -fsS --max-time 6 -o /dev/null https://dispatch.nyafw.com/download/nyanpass-install.sh 2>/dev/null; then
-    echo "[*] 隧道就绪 ✓ 出口 IP: $(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || echo '?')"
-    break
-  fi
-  sleep 1
-  [[ $i -eq 20 ]] && { echo "隧道未生效，退出" >&2; exit 1; }
-done
-
-# ---------- 3) 装 nyanpass（直跑，sshuttle 透明转发）----------
-echo "[*] 1/2 安装 nyanpass nodeclient (${NODE_NAME}) ..."
-printf '%s\nn\nn\n' "${NODE_NAME}" | bash <(curl -fLSs https://dispatch.nyafw.com/download/nyanpass-install.sh) \
+echo "[*] 1/2 安装 nyanpass nodeclient (${NODE_NAME})..."
+S="$NODE_NAME" REINSTALL=1 bash <(curl -fLSs https://dl.nyafw.com/download/nyanpass-install.sh) \
   rel_nodeclient "-t ${NYP_TOKEN} -u https://nyp.pccwg.us"
 
-# ---------- 4) sysctl 调优（本地，与代理无关）----------
-echo "[*] 2/2 写入 sysctl ..."
+echo "[*] 2/2 写入自定义 sysctl..."
 rm -rf /etc/sysctl.d/*
 cat > /etc/sysctl.d/yuwan.conf <<'SYSCTL'
 net.ipv4.tcp_congestion_control = bbr

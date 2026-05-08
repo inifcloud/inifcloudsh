@@ -1,18 +1,23 @@
 # inifcloudsh
 
-一键脚本：在**本机 Linux** 上装 nyanpass nodeclient + 内核网络调优。
-安装期间用 **`sshuttle`** 把所有 TCP+DNS 透明经 SSH 隧道走指定的代理服务器（结束后自动断）。
-本机 app（curl 等）直接发普通 HTTPS，不需要任何 `*_PROXY` 环境变量。
+一键脚本：装 nyanpass nodeclient + 自定义 sysctl。
+
+## 关键设计
+
+直接走 `dl.nyafw.com`，绕过 `dispatch.nyafw.com` 的国家检测。
+dispatch 用 `apple.com geo=cn` 头判断国别，AWS 中国区 / 部分网络环境会被误判成 CN，走慢镜像 `dispatch.nyafw.com/mirror`。
+dispatch 自己的脚本里都写了：
+> `[错误] AWS EC2 机器（以及任何海外月抛机器）请使用 dl.nyafw.com 不要使用 dispatch.nyafw.com`
+
+用 `S=<服务名>` 进入官方静默模式跳过所有 `read`，`REINSTALL=1` 允许覆盖已存在的同名服务。
 
 ## 用法
 
 ```bash
-bash <(curl -fsSL <脚本URL>) <PROXY_IP> '<PROXY_PASSWORD>'
+bash <(curl -fsSL <脚本URL>)
 ```
 
-- 必须 root 运行（`sysctl` 与 nyanpass 安装都要 root）
-- 密码用单引号包裹，避免末尾 `/` 等特殊字符被吞
-- 自动安装 `sshpass` / `curl` / `openssh-client` / `sshuttle`（apt/dnf/yum/apk/pacman）
+必须 root 运行。
 
 ## 脚本
 
@@ -36,13 +41,11 @@ bash <(curl -fsSL <脚本URL>) <PROXY_IP> '<PROXY_PASSWORD>'
 | statically.io    | `https://cdn.statically.io/gh/inifcloud/inifcloudsh/main/<file>` | 全球 CDN，有缓存 |
 | GitHub 直连      | `https://raw.githubusercontent.com/inifcloud/inifcloudsh/main/<file>` | 国外用 |
 
-## 可选环境变量
+## 万一 dl.nyafw.com 不通
+
+如果本机连不上 Cloudflare（`dl.nyafw.com`），可以走 HTTPS 代理（脚本里的 install 子脚本会继承）：
 
 ```bash
-PROXY_USER=root PROXY_PORT=22 \
-  bash <(curl -fsSL <URL>) <PROXY_IP> '<PASS>'
+HTTPS_PROXY=http://your-proxy:port \
+  bash <(curl -fsSL <URL>)
 ```
-
-> ⚠️ **注意**：装好后 nyanpass nodeclient 是常驻 daemon，需要直连 `nyp.pccwg.us`。
-> 本脚本只在**安装阶段**临时拉一条 SOCKS5 隧道走 202，安装完就拆。
-> 如果本机后续连不上 `nyp.pccwg.us`，需要另外配置常驻代理（不在本脚本范围内）。
