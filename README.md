@@ -1,17 +1,18 @@
 # inifcloudsh
 
 一键脚本：在**本机 Linux** 上装 nyanpass nodeclient + 内核网络调优。
-安装时的网络流量经 `ssh -D` SOCKS5 隧道走指定的代理服务器（仅安装期间用，结束后隧道自动关闭）。
+安装期间用 **`sshuttle`** 把所有 TCP+DNS 透明经 SSH 隧道走指定的代理服务器（结束后自动断）。
+本机 app（curl 等）直接发普通 HTTPS，不需要任何 `*_PROXY` 环境变量。
 
 ## 用法
 
 ```bash
-sudo -E bash <(curl -fsSL <脚本URL>) <PROXY_IP> '<PROXY_PASSWORD>'
+bash <(curl -fsSL <脚本URL>) <PROXY_IP> '<PROXY_PASSWORD>'
 ```
 
 - 必须 root 运行（`sysctl` 与 nyanpass 安装都要 root）
 - 密码用单引号包裹，避免末尾 `/` 等特殊字符被吞
-- 自动安装 `sshpass` / `curl` / `openssh-client`（apt/dnf/yum/apk/pacman）
+- 自动安装 `sshpass` / `curl` / `openssh-client` / `sshuttle`（apt/dnf/yum/apk/pacman）
 
 ## 脚本
 
@@ -38,8 +39,8 @@ sudo -E bash <(curl -fsSL <脚本URL>) <PROXY_IP> '<PROXY_PASSWORD>'
 ## 可选环境变量
 
 ```bash
-PROXY_USER=root PROXY_PORT=22 SOCKS_PORT=11080 \
-  sudo -E bash <(curl -fsSL <URL>) <PROXY_IP> '<PASS>'
+PROXY_USER=root PROXY_PORT=22 \
+  bash <(curl -fsSL <URL>) <PROXY_IP> '<PASS>'
 ```
 
 > ⚠️ **注意**：装好后 nyanpass nodeclient 是常驻 daemon，需要直连 `nyp.pccwg.us`。
